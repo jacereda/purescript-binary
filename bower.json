@@ -1,5 +1,5 @@
 {
-  "name": "purescript-arraybuffer",
+  "name": "purescript-binary",
   "version": "0.1.0",
   "ignore": [
     "**/.*",
@@ -9,7 +9,7 @@
   ], 
   "dependencies": {
     "purescript-arraybuffer-types": "~0.1.0",
-    "purescript-arraybuffer": "~0.1.0"
+    "purescript-arraybuffer": "git://github.com/jacereda/purescript-arraybuffer#master"
   },
   "devDependencies": {
     "purescript-debug-foreign": "*",

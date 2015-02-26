@@ -12,6 +12,7 @@
     "purescript-arraybuffer": "~0.1.0"
   },
   "devDependencies": {
+    "purescript-debug-foreign": "*",
     "purescript-quickcheck": "~0.5.0"
   }
 }

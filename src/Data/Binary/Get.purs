@@ -3,82 +3,78 @@ module Data.Binary.Get where
 import Data.Either
 import Data.Maybe
 import Control.Monad.Eff
-import Data.Binary.Advancer
 import Data.ArrayBuffer.Types
-import qualified Data.ArrayBuffer.Typed as TA
-import qualified Data.ArrayBuffer.ArrayBuffer as AB
+import Data.ArrayBuffer.Typed
 import qualified Data.ArrayBuffer.DataView as DV
+import Data.Binary.Advancer
 
-type Deserializer = Advancer
+data Decoder a = Fail
+               | Partial
+               | Done a
 
-type DE a = Eff (reader :: DV.Reader) (Either String a)
-type Getter a = Deserializer -> DE a
-type ArrayGetter t = Deserializer -> Number -> DE t
+type GetState = Advancer
+type Getter a = GetState -> Eff (reader :: DV.Reader) (Decoder a)
+type ArrayGetter a = Number -> Getter a
 
-chkErr :: forall a. Maybe a -> Either String a
-chkErr x = case x of
-  (Just v) -> Right v
-  otherwise -> Left "Short read"
+getter :: forall a. Number -> DV.Getter a -> Getter a
+getter n f d = do
+  o <- advance n d
+  r <- f d.dv o
+  return $ case r of
+    Just v -> Done v
+    otherwise -> Partial
 
 getInt8 :: Getter Int8
-getInt8 d =  chkErr <$> (advance 1 d >>= DV.getInt8 d.dv)
+getInt8 =  getter 1 DV.getInt8
 getInt16 :: Getter Int16
-getInt16 d = chkErr <$> (advance 2 d >>= DV.getInt16 d.dv)
+getInt16 = getter 2 DV.getInt16
 getInt32 :: Getter Int32
-getInt32 d = chkErr <$> (advance 4 d >>= DV.getInt32 d.dv)
+getInt32 = getter 4 DV.getInt32
 getUint8 :: Getter Uint8
-getUint8 d = chkErr <$> (advance 1 d >>= DV.getUint8 d.dv)
+getUint8 = getter 1 DV.getUint8
 getUint16 :: Getter Uint16
-getUint16 d = chkErr <$> (advance 2 d >>= DV.getUint16 d.dv)
+getUint16 = getter 2 DV.getUint16
 getUint32 :: Getter Uint32
-getUint32 d = chkErr <$> (advance 4 d >>= DV.getUint32 d.dv)
+getUint32 = getter 4 DV.getUint32
 getFloat32 :: Getter Float32
-getFloat32 d = chkErr <$> (advance 4 d >>= DV.getFloat32 d.dv)
+getFloat32 = getter 4 DV.getFloat32
 getFloat64 :: Getter Float64
-getFloat64 d = chkErr <$> (advance 8 d >>= DV.getFloat64 d.dv)
+getFloat64 = getter 8 DV.getFloat64
 
-getDataView :: Deserializer -> ByteLength -> DE DataView
-getDataView d n = do
-  o <- advance n d
-  return $ case DV.slice o n (DV.buffer d.dv) of
-    (Just dv) -> Right dv
-    otherwise -> Left "short read"
+getDataView :: ByteLength -> Getter DataView
+getDataView n = getter n get
+  where get :: forall e. DataView -> ByteOffset -> Eff (reader :: DV.Reader | e) (Maybe DataView)
+        get d off = return $ DV.slice off n (DV.buffer d)
 
-getTypedArray :: forall t. Deserializer -> Number -> (DataView -> t) -> DE t
-getTypedArray d sz conv = do
-  edv <- getDataView d sz
-  return $ case edv of
-    Right dv -> Right $ conv dv
-    Left err -> Left err
+getTypedArray :: forall t. (DataView -> t) -> ByteLength -> ArrayGetter t
+getTypedArray conv sizeof n d = do
+  r <- getDataView (sizeof * n) d
+  return $ conv <$> r
 
 getInt8Array :: ArrayGetter Int8Array
-getInt8Array d n = getTypedArray d n TA.asInt8Array
+getInt8Array = getTypedArray asInt8Array 1
 getInt16Array :: ArrayGetter Int16Array
-getInt16Array d n = getTypedArray d (n * 2) TA.asInt16Array
+getInt16Array = getTypedArray asInt16Array 2
 getInt32Array :: ArrayGetter Int32Array
-getInt32Array d n = getTypedArray d (n * 4) TA.asInt32Array
+getInt32Array = getTypedArray asInt32Array 4
 getUint8Array :: ArrayGetter Uint8Array
-getUint8Array d n = getTypedArray d n TA.asUint8Array
+getUint8Array = getTypedArray asUint8Array 1
 getUint16Array :: ArrayGetter Uint16Array
-getUint16Array d n = getTypedArray d (n * 2) TA.asUint16Array
+getUint16Array = getTypedArray asUint16Array 2
 getUint32Array :: ArrayGetter Uint32Array
-getUint32Array d n = getTypedArray d (n * 4) TA.asUint32Array
+getUint32Array = getTypedArray asUint32Array 4
 getUint8ClampedArray :: ArrayGetter Uint8ClampedArray
-getUint8ClampedArray d n = getTypedArray d n TA.asUint8ClampedArray
+getUint8ClampedArray = getTypedArray asUint8ClampedArray 1
 getFloat32Array :: ArrayGetter Float32Array
-getFloat32Array d n = getTypedArray d (n * 4) TA.asFloat32Array
+getFloat32Array = getTypedArray asFloat32Array 4
 getFloat64Array :: ArrayGetter Float64Array
-getFloat64Array d n = getTypedArray d (n * 8) TA.asFloat64Array
+getFloat64Array = getTypedArray asFloat64Array 8
 
-deserializer :: ArrayBuffer -> Eff (reader :: DV.Reader) Deserializer
-deserializer ab = return $ { dv : DV.whole ab, off : 0 }
+open :: ArrayBuffer -> Eff (reader :: DV.Reader) GetState
+open ab = return $ { dv : DV.whole ab, off : 0 }
 
-
-deserialized :: forall a. (Deserializer -> Eff (reader :: DV.Reader) (Either String a)) -> ArrayBuffer -> Either String a
-deserialized f b = runRPure (do
-          d <- deserializer b
-          res <- f d
-          return res)
+get :: forall a. Getter a -> ArrayBuffer -> Decoder a
+get f b = runRPure (open b >>= f)
 
 foreign import runRPure
 """
@@ -86,3 +82,23 @@ function runRPure(f) {
   return f();
 }
 """ :: forall e a. Eff (|e) a -> a
+
+
+instance functorDecoder :: Functor Decoder where
+  (<$>) f (Done v) = Done (f v)
+  (<$>) _ Partial = Partial
+  (<$>) _ _ = Fail
+
+instance applyDecoder :: Apply Decoder where
+  (<*>) (Done f) (Done x) = Done $ f x
+  (<*>) Partial _ = Partial
+  (<*>) _ Partial = Partial
+  (<*>) _ _ = Fail
+
+instance eqDecoder :: (Eq a) => Eq (Decoder a) where
+  (==) (Done a) (Done b) = a == b
+  (==) Partial Partial = true
+  (==) Fail Fail = true
+  (==) _ _ = false
+  (/=) a b = not $ a == b
+  

@@ -3,17 +3,15 @@ module Data.Binary.Put where
 import Data.ArrayBuffer.Types
 import qualified Data.ArrayBuffer.ArrayBuffer as AB
 import qualified Data.ArrayBuffer.DataView as DV
-import Data.ArrayBuffer.Advancer
 import Data.Function
 import Data.Maybe
 import Control.Monad.Eff
+import Data.Binary.Advancer
 
-type Serializer = Advancer
+type PutState = Advancer
+type Putter a = a -> PutState -> Eff (writer :: DV.Writer) PutState
 
-type SE = Eff (writer :: DV.Writer) Serializer
-type Putter a = a -> Serializer -> SE  
-
-putter :: forall a. Number -> DV.Setter a -> a -> Serializer -> Eff (writer :: DV.Writer) Serializer
+putter :: forall a. Number -> DV.Setter a -> Putter a
 putter n f v s = do
   o <- advance n s
   f s.dv v o
@@ -36,19 +34,19 @@ putFloat32 = putter 4 DV.setFloat32
 putFloat64 :: Putter Float64
 putFloat64 = putter 8 DV.setFloat64
 
-mapDataView :: ByteLength -> Serializer -> Eff (writer :: DV.Writer) (Maybe DataView)
+mapDataView :: ByteLength -> PutState -> Eff (writer :: DV.Writer) (Maybe DataView)
 mapDataView n s = do
   o <- advance n s
   return $ DV.slice o n (DV.buffer s.dv)
 
-serializer :: ByteLength -> Eff (writer :: DV.Writer) Serializer
-serializer l = return $ { dv : DV.whole $ AB.create l, off : 0 }
+open :: ByteLength -> Eff (writer :: DV.Writer) PutState
+open l = return $ { dv : DV.whole $ AB.create l, off : 0 }
 
-close :: Serializer -> Eff (writer :: DV.Writer) ArrayBuffer
+close :: PutState -> Eff (writer :: DV.Writer) ArrayBuffer
 close s = return $ AB.slice 0 s.off (DV.buffer s.dv)
 
-serialized :: ByteLength -> (Serializer -> Eff (writer :: DV.Writer) Serializer) -> ArrayBuffer
-serialized n f = runWPure (serializer n >>= f >>= close)
+put :: ByteLength -> (PutState -> Eff (writer :: DV.Writer) PutState) -> ArrayBuffer
+put n f = runWPure (open n >>= f >>= close)
 
 foreign import runWPure
 """

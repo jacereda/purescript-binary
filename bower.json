@@ -1,0 +1,17 @@
+{
+  "name": "purescript-arraybuffer",
+  "version": "0.1.0",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "output"
+  ], 
+  "dependencies": {
+    "purescript-arraybuffer-types": "~0.1.0",
+    "purescript-arraybuffer": "~0.1.0"
+  },
+  "devDependencies": {
+    "purescript-quickcheck": "~0.5.0"
+  }
+}

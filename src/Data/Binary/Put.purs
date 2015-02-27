@@ -17,22 +17,22 @@ putter n f v s = do
   f s.dv v o
   return s
 
-putInt8 :: Putter Int8
-putInt8 = putter 1 DV.setInt8
-putInt16 :: Putter Int16
-putInt16 = putter 2 DV.setInt16
-putInt32 :: Putter Int32
-putInt32 = putter 4 DV.setInt32
-putUint8 :: Putter Uint8
-putUint8 = putter 1 DV.setUint8
-putUint16 :: Putter Uint16
-putUint16 = putter 2 DV.setUint16
-putUint32 :: Putter Uint32
-putUint32 = putter 4 DV.setUint32
-putFloat32 :: Putter Float32
-putFloat32 = putter 4 DV.setFloat32
-putFloat64 :: Putter Float64
-putFloat64 = putter 8 DV.setFloat64
+putI8 :: Putter Number
+putI8 = putter 1 DV.setInt8
+putI16 :: Putter Number
+putI16 = putter 2 DV.setInt16
+putI32 :: Putter Number
+putI32 = putter 4 DV.setInt32
+putU8 :: Putter Number
+putU8 = putter 1 DV.setUint8
+putU16 :: Putter Number
+putU16 = putter 2 DV.setUint16
+putU32 :: Putter Number
+putU32 = putter 4 DV.setUint32
+putF32 :: Putter Number
+putF32 = putter 4 DV.setFloat32
+putF64 :: Putter Number
+putF64 = putter 8 DV.setFloat64
 
 mapDataView :: ByteLength -> PutState -> Eff (writer :: DV.Writer) (Maybe DataView)
 mapDataView n s = do

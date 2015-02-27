@@ -8,7 +8,7 @@ import Data.ArrayBuffer.Typed
 import qualified Data.ArrayBuffer.DataView as DV
 import Data.Binary.Advancer
 
-data Decoder a = Fail
+data Decoder a = Fail String
                | Partial
                | Done a
 
@@ -24,22 +24,22 @@ getter n f d = do
     Just v -> Done v
     otherwise -> Partial
 
-getInt8 :: Getter Int8
-getInt8 =  getter 1 DV.getInt8
-getInt16 :: Getter Int16
-getInt16 = getter 2 DV.getInt16
-getInt32 :: Getter Int32
-getInt32 = getter 4 DV.getInt32
-getUint8 :: Getter Uint8
-getUint8 = getter 1 DV.getUint8
-getUint16 :: Getter Uint16
-getUint16 = getter 2 DV.getUint16
-getUint32 :: Getter Uint32
-getUint32 = getter 4 DV.getUint32
-getFloat32 :: Getter Float32
-getFloat32 = getter 4 DV.getFloat32
-getFloat64 :: Getter Float64
-getFloat64 = getter 8 DV.getFloat64
+getI8 :: Getter Number
+getI8 =  getter 1 DV.getInt8
+getI16 :: Getter Number
+getI16 = getter 2 DV.getInt16
+getI32 :: Getter Number
+getI32 = getter 4 DV.getInt32
+getU8 :: Getter Number
+getU8 = getter 1 DV.getUint8
+getU16 :: Getter Number
+getU16 = getter 2 DV.getUint16
+getU32 :: Getter Number
+getU32 = getter 4 DV.getUint32
+getF32 :: Getter Number
+getF32 = getter 4 DV.getFloat32
+getF64 :: Getter Number
+getF64 = getter 8 DV.getFloat64
 
 getDataView :: ByteLength -> Getter DataView
 getDataView n = getter n get
@@ -70,11 +70,11 @@ getFloat32Array = getTypedArray asFloat32Array 4
 getFloat64Array :: ArrayGetter Float64Array
 getFloat64Array = getTypedArray asFloat64Array 8
 
-open :: ArrayBuffer -> Eff (reader :: DV.Reader) GetState
-open ab = return $ { dv : DV.whole ab, off : 0 }
+from :: ArrayBuffer -> Eff (reader :: DV.Reader) GetState
+from ab = return $ { dv : DV.whole ab, off : 0 }
 
 get :: forall a. Getter a -> ArrayBuffer -> Decoder a
-get f b = runRPure (open b >>= f)
+get f b = runRPure (from b >>= f)
 
 foreign import runRPure
 """
@@ -89,18 +89,23 @@ instance applicativeDecoder :: Applicative Decoder where
 instance functorDecoder :: Functor Decoder where
   (<$>) f (Done v) = Done (f v)
   (<$>) _ Partial = Partial
-  (<$>) _ _ = Fail
+  (<$>) _ (Fail r) = Fail r
 
 instance applyDecoder :: Apply Decoder where
   (<*>) (Done f) (Done x) = Done $ f x
   (<*>) Partial _ = Partial
   (<*>) _ Partial = Partial
-  (<*>) _ _ = Fail
+  (<*>) (Fail r) _ = Fail r
+  (<*>) _ (Fail r) = Fail r
 
 instance eqDecoder :: (Eq a) => Eq (Decoder a) where
   (==) (Done a) (Done b) = a == b
   (==) Partial Partial = true
-  (==) Fail Fail = true
+  (==) (Fail a) (Fail b) = a == b
   (==) _ _ = false
   (/=) a b = not $ a == b
   
+instance showDecoder :: (Show a) => Show (Decoder a) where
+  show (Done v) = "(Done " ++ show v ++ ")"
+  show Partial = "Partial"
+  show (Fail r) = "(Fail " ++ show r ++ ")"

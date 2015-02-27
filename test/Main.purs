@@ -9,8 +9,8 @@ import Data.ArrayBuffer.Types
 import qualified Data.ArrayBuffer.ArrayBuffer as AB
 import qualified Data.ArrayBuffer.DataView as DV
 import qualified Data.ArrayBuffer.Typed as TA
-import qualified Data.Binary.Get as G
-import qualified Data.Binary.Put as P
+import Data.Binary.Get
+import Data.Binary.Put
 import Control.Monad.Eff
 import Control.Monad.Eff.Random
 import Control.Monad.Eff.Exception
@@ -18,16 +18,13 @@ import Math
 
 newtype Comp = Comp Number
 
-putComp :: P.Putter Comp
-putComp (Comp v) = P.putInt8 (Int8 v)
+putComp :: Putter Comp
+putComp (Comp v) = putI8 v
 
-getComp :: G.Getter Comp
+getComp :: Getter Comp
 getComp d = do
-  r <- G.getInt8 d
-  return $ case r of
-    G.Done (Int8 v) -> G.Done $ Comp v
-    G.Partial -> G.Partial
-    G.Fail -> G.Fail
+  r <- getI8 d
+  return $ Comp <$> r
 
 instance eqComp :: Eq Comp where
   (==) (Comp v0) (Comp v1) = v0 == v1
@@ -53,10 +50,10 @@ instance showV4 :: Show V4 where
 instance arbV4 :: Arbitrary V4 where
   arbitrary = V4 <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
 
-putV4 :: P.Putter V4
+putV4 :: Putter V4
 putV4 (V4 x y z t) d = pure d >>= putComp x >>= putComp y >>= putComp z >>= putComp t
 
-getV4 :: G.Getter V4
+getV4 :: Getter V4
 getV4 d = do
   x <- comp
   y <- comp
@@ -77,10 +74,10 @@ instance showM4 :: Show M4 where
 instance arbM4 :: Arbitrary M4 where
   arbitrary = M4 <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
   
-putM4 :: P.Putter M4
+putM4 :: Putter M4
 putM4 (M4 x y z t) d = pure d >>= putV4 x >>= putV4 y >>= putV4 z >>= putV4 t
 
-getM4 :: G.Getter M4
+getM4 :: Getter M4
 getM4 d = do
   x <- comp
   y <- comp
@@ -104,30 +101,30 @@ main = do
 
 
 mat :: M4 -> Boolean
-mat m = let ab = P.put 256 \s -> pure s >>= putM4 m in
-  case G.get getM4 ab of
-    G.Done m' -> m' == m
+mat m = let ab = put 256 \s -> pure s >>= putM4 m in
+  case get getM4 ab of
+    Done m' -> m' == m
     otherwise -> false
 
 serdes :: M4 -> M4 -> M4 -> M4 -> Boolean
 serdes m0 m1 m2 m3 = forcePure $ do
-    let a = P.put 256 \s -> pure s >>= putM4 m0 >>= putM4 m1 >>= putM4 m2 >>= putM4 m3
-    d <- G.open a
+    let a = put 256 \s -> pure s >>= putM4 m0 >>= putM4 m1 >>= putM4 m2 >>= putM4 m3
+    d <- from a
     let g = getM4 d
     m0' <- g
     m1' <- g
     m2' <- g
     m3' <- g
-    return $ (G.Done m0) == m0' && (G.Done m1) == m1' && (G.Done m2) == m2' && (G.Done m3) == m3'
+    return $ (Done m0) == m0' && (Done m1) == m1' && (Done m2) == m2' && (Done m3) == m3'
 
 short :: M4 -> M4 -> Boolean
 short m0 m1 = forcePure $ do
-    let a = P.put 256 \s -> putM4 m0 s
-    d <- G.open a
+    let a = put 256 \s -> putM4 m0 s
+    d <- from a
     let g = getM4 d
     m0' <- g
     m1' <- g
-    return $ m0' == (G.Done m0) && m1' /= (G.Done m1) && m1' == G.Partial
+    return $ m0' == (Done m0) && m1' /= (Done m1) && m1' == Partial
 
 assert :: Boolean -> QC Unit
 assert = quickCheck' 1

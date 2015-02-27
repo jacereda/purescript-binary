@@ -83,6 +83,8 @@ function runRPure(f) {
 }
 """ :: forall e a. Eff (|e) a -> a
 
+instance applicativeDecoder :: Applicative Decoder where
+  pure = Done
 
 instance functorDecoder :: Functor Decoder where
   (<$>) f (Done v) = Done (f v)

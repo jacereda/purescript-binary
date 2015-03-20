@@ -22,7 +22,7 @@ getter n f d = do
   r <- f d.dv o
   return $ case r of
     Just v -> Done v
-    otherwise -> Partial
+    _ -> Partial
 
 getI8 :: Getter Number
 getI8 =  getter 1 DV.getInt8

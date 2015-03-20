@@ -104,7 +104,7 @@ mat :: M4 -> Boolean
 mat m = let ab = put 256 \s -> pure s >>= putM4 m in
   case get getM4 ab of
     Done m' -> m' == m
-    otherwise -> false
+    _ -> false
 
 serdes :: M4 -> M4 -> M4 -> M4 -> Boolean
 serdes m0 m1 m2 m3 = forcePure $ do

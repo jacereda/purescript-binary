@@ -86,13 +86,6 @@ getM4 d = do
   return $ M4 <$> x <*> y <*> z <*> t
   where comp = getV4 d
 
-foreign import ut """
-function ut(a) {
-  console.log(a);
-  return a;
-}
-""" :: forall a. a -> a
-
 main :: Eff (trace :: Trace, random :: Random, err :: Exception, writer :: DV.Writer) Unit
 main = do
   quickCheck mat

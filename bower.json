@@ -8,8 +8,8 @@
     "output"
   ], 
   "dependencies": {
-    "purescript-arraybuffer-types": "~0.1.0",
-    "purescript-arraybuffer": "git://github.com/jacereda/purescript-arraybuffer#master"
+    "purescript-arraybuffer-types": "~0.1.1",
+    "purescript-arraybuffer": "~v0.1.1"
   },
   "devDependencies": {
     "purescript-debug-foreign": "*",

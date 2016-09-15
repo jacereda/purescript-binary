@@ -1,0 +1,2 @@
+
+exports.fround = Math.fround;

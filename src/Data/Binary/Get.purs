@@ -1,40 +1,40 @@
 module Data.Binary.Get where
 
-import Data.Either
-import Data.Maybe
-import Control.Monad.Eff
-import Data.ArrayBuffer.Types
-import Data.ArrayBuffer.Typed
-import qualified Data.ArrayBuffer.DataView as DV
-import Data.Binary.Advancer
+import Prelude
+import Data.Maybe(Maybe(..))
+import Control.Monad.Eff(Eff)
+import Data.ArrayBuffer.Types (ArrayBuffer, Float64Array, Float32Array, Uint8ClampedArray, Uint32Array, Uint16Array, Uint8Array, Int32Array, Int16Array, Int8Array, ByteLength, DataView, ByteOffset)
+import Data.ArrayBuffer.Typed (asFloat64Array, asFloat32Array, asUint8ClampedArray, asUint32Array, asUint16Array, asUint8Array, asInt32Array, asInt16Array, asInt8Array)
+import Data.ArrayBuffer.DataView as DV
+import Data.Binary.Advancer (Advancer, advance)
 
 data Decoder a = Fail String
                | Partial
                | Done a
 
 type GetState = Advancer
-type Getter a = GetState -> Eff (reader :: DV.Reader) (Decoder a)
-type ArrayGetter a = Number -> Getter a
+type Getter a = forall e. GetState -> Eff (reader :: DV.READER | e) (Decoder a)
+type ArrayGetter a = Int -> Getter a
 
-getter :: forall a. Number -> DV.Getter a -> Getter a
+getter :: forall a. Int -> DV.Getter a -> Getter a
 getter n f d = do
   o <- advance n d
   r <- f d.dv o
-  return $ case r of
+  pure $ case r of
     Just v -> Done v
     _ -> Partial
 
-getI8 :: Getter Number
+getI8 :: Getter Int
 getI8 =  getter 1 DV.getInt8
-getI16 :: Getter Number
+getI16 :: Getter Int
 getI16 = getter 2 DV.getInt16
-getI32 :: Getter Number
+getI32 :: Getter Int
 getI32 = getter 4 DV.getInt32
-getU8 :: Getter Number
+getU8 :: Getter Int
 getU8 = getter 1 DV.getUint8
-getU16 :: Getter Number
+getU16 :: Getter Int
 getU16 = getter 2 DV.getUint16
-getU32 :: Getter Number
+getU32 :: Getter Int
 getU32 = getter 4 DV.getUint32
 getF32 :: Getter Number
 getF32 = getter 4 DV.getFloat32
@@ -42,14 +42,14 @@ getF64 :: Getter Number
 getF64 = getter 8 DV.getFloat64
 
 getDataView :: ByteLength -> Getter DataView
-getDataView n = getter n get
-  where get :: forall e. DataView -> ByteOffset -> Eff (reader :: DV.Reader | e) (Maybe DataView)
-        get d off = return $ DV.slice off n (DV.buffer d)
+getDataView n = getter n getAt
+  where getAt :: forall e. DataView -> ByteOffset -> Eff (reader :: DV.READER | e) (Maybe DataView)
+        getAt d off = pure $ DV.slice off n (DV.buffer d)
 
 getTypedArray :: forall t. (DataView -> t) -> ByteLength -> ArrayGetter t
 getTypedArray conv sizeof n d = do
   r <- getDataView (sizeof * n) d
-  return $ conv <$> r
+  pure $ conv <$> r
 
 getInt8Array :: ArrayGetter Int8Array
 getInt8Array = getTypedArray asInt8Array 1
@@ -70,42 +70,36 @@ getFloat32Array = getTypedArray asFloat32Array 4
 getFloat64Array :: ArrayGetter Float64Array
 getFloat64Array = getTypedArray asFloat64Array 8
 
-from :: ArrayBuffer -> Eff (reader :: DV.Reader) GetState
-from ab = return $ { dv : DV.whole ab, off : 0 }
+from :: forall e. ArrayBuffer -> Eff (reader :: DV.READER | e) GetState
+from ab = pure $ { dv : DV.whole ab, off : 0 }
 
 get :: forall a. Getter a -> ArrayBuffer -> Decoder a
 get f b = runRPure (from b >>= f)
 
-foreign import runRPure
-"""
-function runRPure(f) {
-  return f();
-}
-""" :: forall e a. Eff (|e) a -> a
+foreign import runRPure :: forall e a. Eff (|e) a -> a
 
 instance applicativeDecoder :: Applicative Decoder where
   pure = Done
 
 instance functorDecoder :: Functor Decoder where
-  (<$>) f (Done v) = Done (f v)
-  (<$>) _ Partial = Partial
-  (<$>) _ (Fail r) = Fail r
+  map f (Done v) = Done (f v)
+  map _ Partial = Partial
+  map _ (Fail r) = Fail r
 
 instance applyDecoder :: Apply Decoder where
-  (<*>) (Done f) (Done x) = Done $ f x
-  (<*>) Partial _ = Partial
-  (<*>) _ Partial = Partial
-  (<*>) (Fail r) _ = Fail r
-  (<*>) _ (Fail r) = Fail r
+  apply (Done f) (Done x) = Done $ f x
+  apply Partial _ = Partial
+  apply _ Partial = Partial
+  apply (Fail r) _ = Fail r
+  apply _ (Fail r) = Fail r
 
 instance eqDecoder :: (Eq a) => Eq (Decoder a) where
-  (==) (Done a) (Done b) = a == b
-  (==) Partial Partial = true
-  (==) (Fail a) (Fail b) = a == b
-  (==) _ _ = false
-  (/=) a b = not $ a == b
+  eq (Done a) (Done b) = a == b
+  eq Partial Partial = true
+  eq (Fail a) (Fail b) = a == b
+  eq _ _ = false
   
 instance showDecoder :: (Show a) => Show (Decoder a) where
-  show (Done v) = "(Done " ++ show v ++ ")"
+  show (Done v) = "(Done " <> show v <> ")"
   show Partial = "Partial"
-  show (Fail r) = "(Fail " ++ show r ++ ")"
+  show (Fail r) = "(Fail " <> show r <> ")"

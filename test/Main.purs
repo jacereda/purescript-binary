@@ -1,22 +1,19 @@
 module Test.Main where
 
-import Debug.Trace
-import Debug.Foreign
-import Data.Either
-import Data.Maybe
 import Test.QuickCheck
-import Data.ArrayBuffer.Types
-import qualified Data.ArrayBuffer.ArrayBuffer as AB
-import qualified Data.ArrayBuffer.DataView as DV
-import qualified Data.ArrayBuffer.Typed as TA
-import Data.Binary.Get
-import Data.Binary.Put
-import Control.Monad.Eff
-import Control.Monad.Eff.Random
-import Control.Monad.Eff.Exception
-import Math
+import Data.ArrayBuffer.DataView as DV
+import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Console (CONSOLE)
+import Control.Monad.Eff.Exception (EXCEPTION)
+import Control.Monad.Eff.Random (RANDOM)
+import Control.Monad.Eff.Unsafe (unsafePerformEff)
+import Data.Binary.Get (from, Getter, Decoder(..), get, getI8)
+import Data.Binary.Put (put, Putter, putI8)
+import Data.Int.Bits ((.&.))
+import Prelude ((/=), class Show, class Eq, Unit, pure, bind, show, (==), (>>=), (<*>), (<$>), ($), (<>), (&&), (-), (*))
+import Test.QuickCheck.Arbitrary (arbitrary, class Arbitrary)
 
-newtype Comp = Comp Number
+newtype Comp = Comp Int
 
 putComp :: Putter Comp
 putComp (Comp v) = putI8 v
@@ -24,28 +21,26 @@ putComp (Comp v) = putI8 v
 getComp :: Getter Comp
 getComp d = do
   r <- getI8 d
-  return $ Comp <$> r
+  pure $ Comp <$> r
 
 instance eqComp :: Eq Comp where
-  (==) (Comp v0) (Comp v1) = v0 == v1
-  (/=) a b = not $ a == b
+  eq (Comp v0) (Comp v1) = v0 == v1
 
 instance showComp :: Show Comp where
-  show (Comp v) = "Comp " ++ show v
+  show (Comp v) = "Comp " <> show v
 
 instance arbComp :: Arbitrary Comp where
   arbitrary = uniformToComp <$> arbitrary
     where
-    uniformToComp n = Comp $ Math.floor (n * 256) - 128
+    uniformToComp n = Comp $ (n .&. 255) - 128
 
 data V4 = V4 Comp Comp Comp Comp
 
 instance eqV4 :: Eq V4 where
-  (==) (V4 x0 y0 z0 t0) (V4 x1 y1 z1 t1) = x0 == x0 && y0 == y1 && z0 == z1 && t0 == t1
-  (/=) a b = not $ a == b
+  eq (V4 x0 y0 z0 t0) (V4 x1 y1 z1 t1) = x0 == x0 && y0 == y1 && z0 == z1 && t0 == t1
 
 instance showV4 :: Show V4 where
-  show (V4 x y z t) = "(V4 " ++ show x ++ " " ++ show y ++ " " ++ show z ++ " " ++ show t ++ ")"
+  show (V4 x y z t) = "(V4 " <> show x <> " " <> show y <> " " <> show z <> " " <> show t <> ")"
   
 instance arbV4 :: Arbitrary V4 where
   arbitrary = V4 <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
@@ -59,17 +54,16 @@ getV4 d = do
   y <- comp
   z <- comp
   t <- comp
-  return $ V4 <$> x <*> y <*> z <*> t
+  pure $ V4 <$> x <*> y <*> z <*> t
   where comp = getComp d
           
 data M4 = M4 V4 V4 V4 V4
 
 instance eqM4 :: Eq M4 where
-  (==) (M4 x0 y0 z0 t0) (M4 x1 y1 z1 t1) = x0 == x0 && y0 == y1 && z0 == z1 && t0 == t1
-  (/=) a b = not $ a == b
+  eq (M4 x0 y0 z0 t0) (M4 x1 y1 z1 t1) = x0 == x0 && y0 == y1 && z0 == z1 && t0 == t1
 
 instance showM4 :: Show M4 where
-  show (M4 x y z t) = "M4 " ++ show x ++ " " ++ show y ++ " " ++ show z ++ " " ++ show t
+  show (M4 x y z t) = "M4 " <> show x <> " " <> show y <> " " <> show z <> " " <> show t
 
 instance arbM4 :: Arbitrary M4 where
   arbitrary = M4 <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
@@ -83,15 +77,19 @@ getM4 d = do
   y <- comp
   z <- comp
   t <- comp
-  return $ M4 <$> x <*> y <*> z <*> t
+  pure $ M4 <$> x <*> y <*> z <*> t
   where comp = getV4 d
 
-main :: Eff (trace :: Trace, random :: Random, err :: Exception, writer :: DV.Writer) Unit
+main :: forall e. Eff (console :: CONSOLE, random :: RANDOM, err :: EXCEPTION, writer :: DV.WRITER | e) Unit
 main = do
-  quickCheck mat
+  quickCheck \m -> mat m <?> "serialising " <> show m
+  quickCheck \b -> unsafePerformEff $ booltest b
   quickCheck serdes
-  quickCheck short
+--  quickCheck short
 
+
+booltest :: forall e. Boolean -> Eff (|e) Boolean
+booltest b = pure $ true
 
 mat :: M4 -> Boolean
 mat m = let ab = put 256 \s -> pure s >>= putM4 m in
@@ -100,7 +98,7 @@ mat m = let ab = put 256 \s -> pure s >>= putM4 m in
     _ -> false
 
 serdes :: M4 -> M4 -> M4 -> M4 -> Boolean
-serdes m0 m1 m2 m3 = forcePure $ do
+serdes m0 m1 m2 m3 = unsafePerformEff $ do
     let a = put 256 \s -> pure s >>= putM4 m0 >>= putM4 m1 >>= putM4 m2 >>= putM4 m3
     d <- from a
     let g = getM4 d
@@ -108,19 +106,15 @@ serdes m0 m1 m2 m3 = forcePure $ do
     m1' <- g
     m2' <- g
     m3' <- g
-    return $ (Done m0) == m0' && (Done m1) == m1' && (Done m2) == m2' && (Done m3) == m3'
+    pure $ (Done m0) == m0' && (Done m1) == m1' && (Done m2) == m2' && (Done m3) == m3'
 
 short :: M4 -> M4 -> Boolean
-short m0 m1 = forcePure $ do
+short m0 m1 = unsafePerformEff $ do
     let a = put 256 \s -> putM4 m0 s
     d <- from a
     let g = getM4 d
     m0' <- g
     m1' <- g
-    return $ m0' == (Done m0) && m1' /= (Done m1) && m1' == Partial
+    pure $ m0' == (Done m0) && m1' /= (Done m1) && m1' == Partial
 
-assert :: Boolean -> QC Unit
-assert = quickCheck' 1
-
-foreign import forcePure "function forcePure(e) { return e(); }" :: forall e. (Eff (|e) Boolean) -> Boolean
 

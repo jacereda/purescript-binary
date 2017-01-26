@@ -1,17 +1,17 @@
 {
   "name": "purescript-binary",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "ignore": [
     "**/.*",
     "node_modules",
     "bower_components",
     "output"
-  ], 
+  ],
   "dependencies": {
-    "purescript-arraybuffer-types": "~0.2.0",
-    "purescript-arraybuffer": "~1.0.0"
+    "purescript-st": "^2.0.0",
+    "purescript-arraybuffer": "^4.0.0"
   },
   "devDependencies": {
-    "purescript-quickcheck": "~1.0.0"
+    "purescript-quickcheck": "^3.0.0"
   }
 }

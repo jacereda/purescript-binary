@@ -1,49 +1,52 @@
 module Data.Binary.Get where
 
 import Prelude
-import Data.Maybe(Maybe(..))
-import Control.Monad.Eff(Eff)
-import Data.ArrayBuffer.Types (ArrayBuffer, Float64Array, Float32Array, Uint8ClampedArray, Uint32Array, Uint16Array, Uint8Array, Int32Array, Int16Array, Int8Array, ByteLength, DataView, ByteOffset)
-import Data.ArrayBuffer.Typed (asFloat64Array, asFloat32Array, asUint8ClampedArray, asUint32Array, asUint16Array, asUint8Array, asInt32Array, asInt16Array, asInt8Array)
 import Data.ArrayBuffer.DataView as DV
-import Data.Binary.Advancer (Advancer, advance)
+import Control.Monad.Eff (Eff)
+import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef, readSTRef, runST)
+import Data.ArrayBuffer.ArrayBuffer (ARRAY_BUFFER)
+import Data.ArrayBuffer.Typed (asFloat64Array, asFloat32Array, asUint8ClampedArray, asUint32Array, asUint16Array, asUint8Array, asInt32Array, asInt16Array, asInt8Array)
+import Data.ArrayBuffer.Types (ArrayBuffer, Float64Array, Float32Array, Uint8ClampedArray, Uint32Array, Uint16Array, Uint8Array, Int32Array, Int16Array, Int8Array, ByteLength, DataView, ByteOffset)
+import Data.Maybe (Maybe(..))
+import Data.UInt (UInt)
 
 data Decoder a = Fail String
                | Partial
                | Done a
 
-type GetState = Advancer
-type Getter a = forall e. GetState -> Eff (reader :: DV.READER | e) (Decoder a)
-type ArrayGetter a = Int -> Getter a
+type Getter a = forall e h. STRef h {dv :: DataView, off :: ByteOffset} -> Eff (st :: ST h, arrayBuffer :: ARRAY_BUFFER | e) (Decoder a)
+type ArrayGetter a = ByteLength -> Getter a
 
-getter :: forall a. Int -> DV.Getter a -> Getter a
-getter n f d = do
-  o <- advance n d
-  r <- f d.dv o
+
+
+getter :: forall a. ByteLength -> DV.Getter a -> Getter a
+getter n f dref = do
+  st <- modifySTRef dref $ \st -> {dv: st.dv, off: st.off + n}
+  r <- f st.dv (st.off - n)
   pure $ case r of
     Just v -> Done v
-    _ -> Partial
+    Nothing -> Partial
 
 getI8 :: Getter Int
 getI8 =  getter 1 DV.getInt8
 getI16 :: Getter Int
-getI16 = getter 2 DV.getInt16
+getI16 = getter 2 DV.getInt16be
 getI32 :: Getter Int
-getI32 = getter 4 DV.getInt32
-getU8 :: Getter Int
+getI32 = getter 4 DV.getInt32be
+getU8 :: Getter UInt
 getU8 = getter 1 DV.getUint8
-getU16 :: Getter Int
-getU16 = getter 2 DV.getUint16
-getU32 :: Getter Int
-getU32 = getter 4 DV.getUint32
+getU16 :: Getter UInt
+getU16 = getter 2 DV.getUint16be
+getU32 :: Getter UInt
+getU32 = getter 4 DV.getUint32be
 getF32 :: Getter Number
-getF32 = getter 4 DV.getFloat32
+getF32 = getter 4 DV.getFloat32be
 getF64 :: Getter Number
-getF64 = getter 8 DV.getFloat64
+getF64 = getter 8 DV.getFloat64be
 
 getDataView :: ByteLength -> Getter DataView
 getDataView n = getter n getAt
-  where getAt :: forall e. DataView -> ByteOffset -> Eff (reader :: DV.READER | e) (Maybe DataView)
+  where getAt :: forall e. DataView -> ByteOffset -> Eff (arrayBuffer :: ARRAY_BUFFER | e) (Maybe DataView)
         getAt d off = pure $ DV.slice off n (DV.buffer d)
 
 getTypedArray :: forall t. (DataView -> t) -> ByteLength -> ArrayGetter t
@@ -70,13 +73,11 @@ getFloat32Array = getTypedArray asFloat32Array 4
 getFloat64Array :: ArrayGetter Float64Array
 getFloat64Array = getTypedArray asFloat64Array 8
 
-from :: forall e. ArrayBuffer -> Eff (reader :: DV.READER | e) GetState
-from ab = pure $ { dv : DV.whole ab, off : 0 }
+from :: forall e h. ArrayBuffer -> Eff (st :: ST h | e) (STRef h {dv :: DataView, off :: ByteOffset})
+from ab = newSTRef { dv: DV.whole ab, off: 0 }
 
-get :: forall a. Getter a -> ArrayBuffer -> Decoder a
-get f b = runRPure (from b >>= f)
-
-foreign import runRPure :: forall e a. Eff (|e) a -> a
+get :: forall a. ArrayBuffer -> Getter a -> Eff (arrayBuffer :: ARRAY_BUFFER) (Decoder a)
+get ab f = runST (from ab >>= f)
 
 instance applicativeDecoder :: Applicative Decoder where
   pure = Done

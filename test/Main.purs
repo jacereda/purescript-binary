@@ -1,19 +1,26 @@
 module Test.Main where
 
-import Test.QuickCheck
-import Data.ArrayBuffer.DataView as DV
+import Prelude
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Random (RANDOM)
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
-import Data.Binary.Class (load, class Loadable, save, class Saveable)
-import Data.Binary.Get (from, getF32, getF64, getU32, getI32, getI16, getU16, getU8, Decoder(..), get, getI8)
-import Data.Binary.Put (putF64, putF32, putI32, putU32, putI16, putU16, putU8, put, putI8)
-import Data.Int.Bits (zshr, (.&.))
-import Prelude ((<<<), (/=), class Show, class Eq, Unit, pure, bind, show, (==), (>>=), (<*>), (<$>), ($), (<>), (&&), (-), (*))
+import Data.ArrayBuffer.ArrayBuffer (ARRAY_BUFFER)
+import Data.Binary.Get (Decoder(..), Getter, get, getF32, getF64, getI16, getI32, getI8, getU16, getU32, getU8)
+import Data.Binary.Put (Putter, putF64, putF32, putI32, putU32, putI16, putU16, putU8, put, putI8)
+import Data.Int.Bits ((.&.))
+import Data.Tuple (Tuple(Tuple))
+import Data.UInt (UInt, fromInt)
+import Math (round)
+import Test.QuickCheck (quickCheck, (<?>))
 import Test.QuickCheck.Arbitrary (arbitrary, class Arbitrary)
 
+class Loadable a where
+  load :: Getter a
+
+class Saveable a where
+  save :: Putter a
+  
 newtype TInt8 = TInt8 Int
 
 instance eqTInt8 :: Eq TInt8 where
@@ -35,7 +42,7 @@ instance loadableTInt8 :: Loadable TInt8 where
     pure $ TInt8 <$> r
 
 
-newtype TUInt8 = TUInt8 Int
+newtype TUInt8 = TUInt8 UInt
 
 instance eqTUInt8 :: Eq TUInt8 where
   eq (TUInt8 a) (TUInt8 b) = a == b
@@ -45,7 +52,8 @@ instance showTUInt8 :: Show TUInt8 where
 
 instance arbTUInt8 :: Arbitrary TUInt8 where
   arbitrary = TUInt8 <$> x
-    where x = (_ .&. 255) <$> arbitrary
+    where x = fromInt <$> a
+          a = (_ .&. 255) <$> arbitrary
 
 instance saveableTUInt8 :: Saveable TUInt8 where
   save (TUInt8 x) = putU8 x
@@ -77,7 +85,7 @@ instance loadableTInt16 :: Loadable TInt16 where
     pure $ TInt16 <$> r
 
 
-newtype TUInt16 = TUInt16 Int
+newtype TUInt16 = TUInt16 UInt
 
 instance eqTUInt16 :: Eq TUInt16 where
   eq (TUInt16 a) (TUInt16 b) = a == b
@@ -87,7 +95,8 @@ instance showTUInt16 :: Show TUInt16 where
 
 instance arbTUInt16 :: Arbitrary TUInt16 where
   arbitrary = TUInt16 <$> x
-    where x = (_ .&. 65535) <$> arbitrary
+    where x = fromInt <$> a
+          a = (_ .&. 65535) <$> arbitrary
 
 instance saveableTUInt16 :: Saveable TUInt16 where
   save (TUInt16 x) = putU16 x
@@ -117,7 +126,7 @@ instance loadableTInt32 :: Loadable TInt32 where
     r <- getI32 d
     pure $ TInt32 <$> r
 
-newtype TUInt32 = TUInt32 Int
+newtype TUInt32 = TUInt32 UInt
 
 instance eqTUInt32 :: Eq TUInt32 where
   eq (TUInt32 a) (TUInt32 b) = a == b
@@ -127,7 +136,7 @@ instance showTUInt32 :: Show TUInt32 where
 
 instance arbTUInt32 :: Arbitrary TUInt32 where
   arbitrary = TUInt32 <$> x
-    where x = (_ `zshr` 0) <$> arbitrary
+    where x = fromInt <$> arbitrary
 
 instance saveableTUInt32 :: Saveable TUInt32 where
   save (TUInt32 x) = putU32 x
@@ -149,7 +158,7 @@ instance showTF32 :: Show TF32 where
 
 instance arbTF32 :: Arbitrary TF32 where
   arbitrary = TF32 <$> x
-    where x = fround <$> arbitrary
+    where x = round <$> arbitrary
 
 instance saveableTF32 :: Saveable TF32 where
   save (TF32 x) = putF32 x
@@ -227,8 +236,19 @@ instance loadableM4 :: Loadable a => Loadable (M4 a) where
     pure $ M4 <$> x <*> y <*> z <*> t
     where comp = load d
 
-main :: forall e. Eff (console :: CONSOLE, random :: RANDOM, err :: EXCEPTION, writer :: DV.WRITER | e) Unit
+instance loadableTuple :: (Loadable a, Loadable b) => Loadable (Tuple a b) where
+  load d = do
+    x <- load d
+    y <- load d
+    pure $ Tuple <$> x <*> y
+
+main :: forall e. Eff (console :: CONSOLE, random :: RANDOM, err :: EXCEPTION, arrayBuffer :: ARRAY_BUFFER | e) Unit
 main = do
+  let mat :: forall a. (Loadable a, Saveable a, Eq a, Arbitrary a) => M4 a -> Boolean
+      mat m = runAB do
+        ab <- put 128 \s -> pure s >>= save m
+        res <- get ab load
+        pure $ Done m == res
   quickCheck \m -> mat m <?> "serialising Int8 matrix" <> show (m :: M4 TInt8)
   quickCheck \m -> mat m <?> "serialising Int16 matrix" <> show (m :: M4 TInt16)
   quickCheck \m -> mat m <?> "serialising Int32 matrix" <> show (m :: M4 TInt32)
@@ -236,7 +256,15 @@ main = do
   quickCheck \m -> mat m <?> "serialising UInt16 matrix" <> show (m :: M4 TUInt16)  
   quickCheck \m -> mat m <?> "serialising UInt32 matrix" <> show (m :: M4 TUInt32)  
   quickCheck \m -> mat m <?> "serialising F32 matrix" <> show (m :: M4 TF32)
-  quickCheck \m -> mat m <?> "serialising F64 matrix" <> show (m :: M4 TF64)  
+  quickCheck \m -> mat m <?> "serialising F64 matrix" <> show (m :: M4 TF64)
+
+  let serdes :: forall a. (Loadable a, Saveable a, Eq a) => M4 a -> M4 a -> M4 a -> M4 a -> Boolean
+      serdes m0 m1 m2 m3 = runAB do
+        ab <- put 512 \s -> pure s >>= save m0 >>= save m1 >>= save m2 >>= save m3
+        res <- get ab load
+        pure $ case res of
+          Done (Tuple (Tuple (Tuple m0' m1') m2') m3') -> m0 == m0' && m1 == m1' && m2 == m2' && m3 == m3'
+          _ -> false
   quickCheck \m0 m1 m2 m3 -> serdes m0 m1 m2 m3 <?> "serialising/deserialising Int8 matrix"
                              <> show (m0 :: M4 TInt8)
                              <> show (m1 :: M4 TInt8)
@@ -277,36 +305,17 @@ main = do
                              <> show (m1 :: M4 TF64)
                              <> show (m2 :: M4 TF64)
                              <> show (m3 :: M4 TF64)
+
+  let short :: forall a. (Loadable a, Saveable a, Eq a) => M4 a -> M4 a -> Boolean
+      short m0 m1 = runAB do
+        ab <- put 256 $ \s -> pure s >>= save m0
+        res0 <- get ab load
+        res1 <- get ab load        
+        pure $ res1 == (Partial :: Decoder (Tuple (M4 a) (M4 a))) && res0 == (Done m0)
+                                                      
   quickCheck \m1 m2 -> short m1 m2 <?> "short read"
-                       <> show (m1 :: M4 TUInt8)
-                       <> show (m2 :: M4 TUInt8)
+                      <> show (m1 :: M4 TUInt8)
+                      <> show (m2 :: M4 TUInt8)
 
+foreign import runAB :: forall a. Eff (arrayBuffer :: ARRAY_BUFFER) a -> a
 
-mat :: forall a. (Loadable a, Saveable a, Eq a, Arbitrary a) => M4 a -> Boolean
-mat m = let ab = put 128 \s -> pure s >>= save m in
-  case get load ab of
-    Done m' -> m' == m
-    _ -> false
-
-serdes :: forall a. (Loadable a, Saveable a, Eq a) => M4 a -> M4 a -> M4 a -> M4 a -> Boolean
-serdes m0 m1 m2 m3 = unsafePerformEff $ do
-    let a = put 512 \s -> pure s >>= save m0 >>= save m1 >>= save m2 >>= save m3
-    d <- from a
-    let g = load d
-    m0' <- g
-    m1' <- g
-    m2' <- g
-    m3' <- g
-    pure $ (Done m0) == m0' && (Done m1) == m1' && (Done m2) == m2' && (Done m3) == m3'
-
-short :: forall a. (Loadable a, Saveable a, Eq a) => (M4 a) -> (M4 a) -> Boolean
-short m0 m1 = unsafePerformEff $ do
-    let a = put 256 \s -> save m0 s
-    d <- from a
-    let g = load d
-    m0' <- g
-    m1' <- g
-    pure $ m0' == (Done m0) && m1' /= (Done m1) && m1' == Partial
-
-
-foreign import fround :: Number -> Number

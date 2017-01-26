@@ -1,2 +1,2 @@
 
-exports.fround = Math.fround;
+exports.runAB = function(f) { return f(); }

@@ -3,7 +3,7 @@ module Data.Binary.Get where
 import Prelude
 import Data.ArrayBuffer.DataView as DV
 import Control.Monad.Eff (Eff)
-import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef, readSTRef, runST)
+import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef, runST)
 import Data.ArrayBuffer.ArrayBuffer (ARRAY_BUFFER)
 import Data.ArrayBuffer.Typed (asFloat64Array, asFloat32Array, asUint8ClampedArray, asUint32Array, asUint16Array, asUint8Array, asInt32Array, asInt16Array, asInt8Array)
 import Data.ArrayBuffer.Types (ArrayBuffer, Float64Array, Float32Array, Uint8ClampedArray, Uint32Array, Uint16Array, Uint8Array, Int32Array, Int16Array, Int8Array, ByteLength, DataView, ByteOffset)
